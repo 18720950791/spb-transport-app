@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find D:/alicode/ali/repo-22/qwen2 -type d -name test*)",
+      "Bash(find D:/alicode/ali/repo-22/qwen2 -type f -name *Test* -o -name *test* -o -name *Spec*)"
+    ]
+  }
+}
