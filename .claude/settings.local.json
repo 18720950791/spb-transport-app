@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn -version)",
+      "Bash(java -version)",
+      "Bash(javac -version)",
+      "Read(//c/Users/ouyang/.m2/**)",
+      "Bash(echo \"ANDROID_HOME=$ANDROID_HOME\")",
+      "Bash(echo \"ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT\")",
+      "Bash(tee .verify/compile.log echo \"compile_exit=$PIPESTATUS[0]\" echo \"### RUN TESTS ###\" java -cp \".verify/out;$CP\" org.junit.runner.JUnitCore com.emal.android.transport.spb.RouteTaskCoordinatorTest)",
+      "Bash(tee .verify/test.log echo \"run_exit=$PIPESTATUS[0]\")"
+    ]
+  }
+}

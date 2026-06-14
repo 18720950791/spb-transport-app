@@ -2,6 +2,7 @@ package com.emal.android.transport.spb.task;
 
 import android.os.AsyncTask;
 import android.util.Log;
+import com.emal.android.transport.spb.RouteTaskCoordinator;
 import com.emal.android.transport.spb.VehicleSyncAdapter;
 import com.emal.android.transport.spb.VehicleType;
 import com.emal.android.transport.spb.portal.*;
@@ -18,10 +19,15 @@ public class DrawVehicleTask extends AsyncTask<Object, Void, List<Vehicle>> {
     private static final String TAG = DrawVehicleTask.class.getName();
     private Route route;
     private VehicleSyncAdapter vehicleSyncAdapter;
+    private final RouteTaskCoordinator coordinator;
+    private final RouteTaskCoordinator.Token token;
 
-    public DrawVehicleTask(Route route, VehicleSyncAdapter vehicleSyncAdapter) {
+    public DrawVehicleTask(Route route, VehicleSyncAdapter vehicleSyncAdapter,
+                           RouteTaskCoordinator coordinator, RouteTaskCoordinator.Token token) {
         this.route = route;
         this.vehicleSyncAdapter = vehicleSyncAdapter;
+        this.coordinator = coordinator;
+        this.token = token;
     }
 
     @Override
@@ -45,6 +51,11 @@ public class DrawVehicleTask extends AsyncTask<Object, Void, List<Vehicle>> {
 
     @Override
     protected void onPostExecute(List<Vehicle> vehicles) {
+        if (isCancelled() || !coordinator.shouldApply(route, token)) {
+            Log.d(TAG, "Skip stale/cancelled result for route: " + route);
+            vehicleSyncAdapter.afterSync(false);
+            return;
+        }
         if (vehicles == null) {
             vehicleSyncAdapter.afterSync(false);
             return;
@@ -90,5 +101,10 @@ public class DrawVehicleTask extends AsyncTask<Object, Void, List<Vehicle>> {
 
         vehicleSyncAdapter.updateMarkers(route, routeMarkers);
         vehicleSyncAdapter.afterSync(true);
+    }
+
+    @Override
+    protected void onCancelled(List<Vehicle> vehicles) {
+        Log.d(TAG, "Cancelled draw task for route: " + route + ", map left untouched");
     }
 }

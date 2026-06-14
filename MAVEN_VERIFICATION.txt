@@ -1,0 +1,99 @@
+车辆同步任务竞态修复 — 构建/测试验证记录
+Maven verification record for the VehicleTracker race-condition fix
+====================================================================
+
+概述 / SUMMARY
+--------------
+本次修复将每条路线异步任务的“创建/替换/取消/完成”规则集中到无 Android 依赖的
+RouteTaskCoordinator 中，并让 DrawVehicleTask 在 onPostExecute 中通过
+coordinator.shouldApply(route, token) 这一统一闸门决定是否回写地图。已取消、已移除、
+已暂停或被新一轮同步替换的任务都不会再更新地图。
+
+The lifecycle rules now live in the Android-free class RouteTaskCoordinator, and
+DrawVehicleTask gates every map mutation behind coordinator.shouldApply(route, token).
+Cancelled / removed / paused / superseded tasks can no longer touch the map.
+
+远端接口协议未改动 / Remote protocol unchanged: PortalClient and Constants URL
+templates were not modified.
+
+
+环境 / ENVIRONMENT (this sandbox)
+---------------------------------
+- mvn        : NOT installed ("mvn: command not found")
+- ANDROID_HOME / ANDROID_SDK_ROOT : empty (no Android SDK)
+- java/javac : OpenJDK (Temurin) 1.8.0_492
+- junit      : 4.13.2 present in local ~/.m2
+- hamcrest   : 3.0 present in local ~/.m2
+
+因此本机无法执行完整的 Android `apk` Maven 构建（需要 Maven + Android SDK +
+google-play-services apklib）。`mvn test` 在此沙箱内无法运行。
+A full Android `apk` Maven build cannot run here (it needs Maven + the Android SDK
++ the google-play-services apklib). `mvn test` was therefore not executable in this
+sandbox.
+
+
+pom.xml 改动以支持 `mvn test` / pom.xml CHANGES enabling `mvn test`
+------------------------------------------------------------------
+1. Added test-scope dependency: junit:junit:4.13.2
+2. Added maven-surefire-plugin (2.19.1) with an execution bound to the `test`
+   phase, including **/*Test.java.
+
+在具备 Maven 与 Android SDK 的环境中，运行以下命令即可执行新增的竞态测试：
+In an environment with Maven and the Android SDK, run:
+
+    mvn test
+
+surefire 会执行 com.emal.android.transport.spb.RouteTaskCoordinatorTest。
+
+
+本机替代验证 / LOCAL VERIFICATION PERFORMED HERE
+------------------------------------------------
+竞态逻辑全部位于不依赖 Android 的 RouteTaskCoordinator，因此可在纯 JVM 上编译并运行
+其单元测试。为编译 Route -> VehicleType（VehicleType 引用 android.graphics.Color），
+临时创建了一个仅用于测试的 android.graphics.Color 桩（位于 src 之外，不参与应用构建）。
+
+Because all the race logic is in the Android-free RouteTaskCoordinator, its tests can
+be compiled and run on a plain JVM. A throwaway test-only android.graphics.Color stub
+(kept outside src/, not part of the app build) was used so Route -> VehicleType compiles.
+
+Commands:
+
+    CP="<.m2>/junit/junit/4.13.2/junit-4.13.2.jar;<.m2>/org/hamcrest/hamcrest/3.0/hamcrest-3.0.jar"
+    javac -d out -cp "$CP" \
+        stub/android/graphics/Color.java \
+        src/main/java/com/emal/android/transport/spb/VehicleType.java \
+        src/main/java/com/emal/android/transport/spb/portal/Route.java \
+        src/main/java/com/emal/android/transport/spb/RouteTaskCoordinator.java \
+        src/test/java/com/emal/android/transport/spb/RouteTaskCoordinatorTest.java
+    java -cp "out;$CP" org.junit.runner.JUnitCore \
+        com.emal.android.transport.spb.RouteTaskCoordinatorTest
+
+Result:
+    compile exit code : 0
+    JUnit version 4.13.2
+    .........
+    Time: ~0.45s
+    OK (9 tests)
+    run exit code     : 0
+
+9 个测试全部通过 / All 9 tests passed, covering:
+  - replacedTokenIsNoLongerCurrent            (replace rule)
+  - pauseInvalidatesInFlightToken             (pause cleanup)
+  - removedRouteResultIsRejected              (removed route not redrawn)
+  - untrackedRouteNeverApplies                (route outside tracking set)
+  - resumeReenablesScheduling                 (resume only current routes)
+  - clearForgetsEverything                    (stop/clear)
+  - rapidAddRemoveKeepsStateConsistent        (race: fast add/remove)
+  - pauseRacingCompletionNeverAppliesAfterPause (race: pause vs task completion)
+  - duplicateRouteSyncKeepsExactlyOneCurrentToken (race: duplicate route sync)
+
+
+范围说明 / SCOPE NOTE
+---------------------
+VehicleTracker 与 DrawVehicleTask 依赖 Android 运行时（AsyncTask/Handler/Looper/Log），
+未在本机单独运行；它们的正确性依赖于已验证的 RouteTaskCoordinator 闸门，并在设备上的
+应用构建中被使用。
+
+VehicleTracker and DrawVehicleTask depend on the Android runtime and were not executed
+standalone here; their correctness rests on the verified RouteTaskCoordinator gate and is
+exercised by the on-device app build.

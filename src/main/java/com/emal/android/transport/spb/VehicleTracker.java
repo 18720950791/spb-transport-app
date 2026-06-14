@@ -14,21 +14,30 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * User: alexey.emelyanenko@gmail.com
  * Date: 5/18/13 5:06 AM
+ * <p/>
+ * Drives the periodic refresh of vehicle positions. The lifecycle of each per-route drawing task
+ * is delegated to {@link RouteTaskCoordinator}, which is the single source of truth for whether a
+ * finished {@link DrawVehicleTask} is still allowed to update the map. {@code runningTasks} only
+ * keeps the live {@link AsyncTask} handles so a superseded round can be cancelled best-effort.
  */
 public class VehicleTracker {
     private static final String TAG = VehicleTracker.class.getName();
     private AsyncTask syncTypesTask;
-    private Set<VehicleType> vehicleTypes;
-    private Map<Route, AsyncTask> routeTaskMap;
-    private VehicleSyncAdapter vehicleSyncAdapter;
-    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private final Set<VehicleType> vehicleTypes;
+    private final Map<Route, AsyncTask> runningTasks;
+    private final RouteTaskCoordinator coordinator;
+    private final VehicleSyncAdapter vehicleSyncAdapter;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     private TimerTask timerTask;
 
     private class MapUpdateTimerTask extends TimerTask {
         @Override
         public void run() {
-            //TODO
             synchronized (VehicleTracker.this) {
+                if (timerTask != this || coordinator.isPaused()) {
+                    Log.d(TAG, "Skip timer tick: superseded or paused");
+                    return;
+                }
                 int syncTime = vehicleSyncAdapter.getSyncTime();
                 Log.d(TAG, "START Timer Update " + Thread.currentThread().getName() + " with time " + syncTime);
                 scheduleTasks();
@@ -40,18 +49,19 @@ public class VehicleTracker {
     public VehicleTracker(VehicleSyncAdapter vehicleSyncAdapter) {
         this.vehicleSyncAdapter = vehicleSyncAdapter;
         this.vehicleTypes = Collections.synchronizedSet(new HashSet<VehicleType>());
-        this.routeTaskMap = new ConcurrentHashMap<Route, AsyncTask>();
+        this.runningTasks = new ConcurrentHashMap<Route, AsyncTask>();
+        this.coordinator = new RouteTaskCoordinator();
     }
 
     public synchronized void restart() {
         Log.d(TAG, "restart");
+        coordinator.resume();
         vehicleSyncAdapter.setBBox();
         if (timerTask != null) {
+            mHandler.removeCallbacks(timerTask);
             timerTask.cancel();
-        } else {
-            timerTask = new MapUpdateTimerTask();
         }
-        mHandler.removeCallbacks(timerTask);
+        timerTask = new MapUpdateTimerTask();
         mHandler.postDelayed(timerTask, 0);
     }
 
@@ -66,69 +76,93 @@ public class VehicleTracker {
     }
 
     public synchronized void add(Route route) {
-        AsyncTask asyncTask = routeTaskMap.get(route);
-        if (asyncTask == null) {
-            routeTaskMap.put(route, new DrawVehicleTask(route, vehicleSyncAdapter));
+        coordinator.addRoute(route);
+    }
+
+    /**
+     * Stops tracking a single route: cancels its running task best-effort, drops it from the
+     * coordinator so any late callback is ignored, and removes its markers from the map.
+     */
+    public synchronized void remove(Route route) {
+        AsyncTask task = runningTasks.remove(route);
+        if (task != null && !AsyncTask.Status.FINISHED.equals(task.getStatus())) {
+            task.cancel(true);
         }
+        coordinator.removeRoute(route);
+        vehicleSyncAdapter.removeMarkers(route);
     }
 
     public ArrayList<Route> getTracked() {
-        return new ArrayList<Route>(routeTaskMap.keySet());
+        return new ArrayList<Route>(coordinator.trackedRoutes());
+    }
+
+    public synchronized void resume() {
+        restart();
     }
 
     public synchronized void pause() {
         Log.d(TAG, "pause tracking <<");
-        mHandler.removeCallbacks(timerTask);
         if (timerTask != null) {
+            mHandler.removeCallbacks(timerTask);
             timerTask.cancel();
         }
 
         if (syncTypesTask != null && !AsyncTask.Status.FINISHED.equals(syncTypesTask.getStatus())) {
             syncTypesTask.cancel(true);
         }
-        vehicleSyncAdapter.clearOverlay();
 
         Log.d(TAG, "stopTrackAllRoutes <<");
-        for (Map.Entry<Route, AsyncTask> task : routeTaskMap.entrySet()) {
-            Route key = task.getKey();
-            AsyncTask value = task.getValue();
+        for (Map.Entry<Route, AsyncTask> entry : runningTasks.entrySet()) {
+            AsyncTask value = entry.getValue();
             if (value != null && !AsyncTask.Status.FINISHED.equals(value.getStatus())) {
                 value.cancel(true);
             }
         }
+        runningTasks.clear();
+        // Invalidate every in-flight token so a callback that finishes after this point is a no-op.
+        coordinator.pause();
+        vehicleSyncAdapter.clearOverlay();
         Log.d(TAG, "pause tracking >>");
     }
 
     public synchronized void stop() {
         Log.d(TAG, "stop tracking <<");
         pause();
-        for (Map.Entry<Route, AsyncTask> task : routeTaskMap.entrySet()) {
-            Route key = task.getKey();
-            vehicleSyncAdapter.removeMarkers(key);
+        for (Route route : coordinator.trackedRoutes()) {
+            vehicleSyncAdapter.removeMarkers(route);
         }
-        routeTaskMap.clear();
+        coordinator.clear();
+        runningTasks.clear();
         Log.d(TAG, "stop tracking >>");
     }
 
     private synchronized void scheduleTasks() {
         Log.d(TAG, "scheduleTasks <<");
+        if (coordinator.isPaused()) {
+            Log.d(TAG, "scheduleTasks skipped: paused");
+            return;
+        }
         if (syncTypesTask != null && !AsyncTask.Status.FINISHED.equals(syncTypesTask.getStatus())) {
             Log.d(TAG, "Reschedule vehicleTypes");
             syncTypesTask.cancel(true);
         }
-        if (!vehicleTypes.isEmpty() && routeTaskMap.isEmpty()) {
+
+        Set<Route> tracked = coordinator.trackedRoutes();
+        if (!vehicleTypes.isEmpty() && tracked.isEmpty()) {
             Log.d(TAG, "Scheduling typed layout for types: " + vehicleTypes);
             syncTypesTask = new SyncVehiclePositionTask(vehicleSyncAdapter, vehicleTypes).execute();
         }
 
-        for (Route route : routeTaskMap.keySet()) {
+        for (Route route : tracked) {
             Log.d(TAG, "Scheduling route: " + route);
-            AsyncTask task = routeTaskMap.get(route);
-            if (task != null && !AsyncTask.Status.FINISHED.equals(task.getStatus())) {
-                task.cancel(true);
+            AsyncTask prev = runningTasks.get(route);
+            if (prev != null && !AsyncTask.Status.FINISHED.equals(prev.getStatus())) {
+                prev.cancel(true);
             }
-            task = new DrawVehicleTask(route, vehicleSyncAdapter).execute();
-            routeTaskMap.put(route, task);
+            // Issuing a fresh token supersedes the previous round for this route.
+            RouteTaskCoordinator.Token token = coordinator.beginTask(route);
+            AsyncTask task = new DrawVehicleTask(route, vehicleSyncAdapter, coordinator, token).execute();
+            runningTasks.put(route, task);
         }
         Log.d(TAG, "scheduleTasks >>");
     }
