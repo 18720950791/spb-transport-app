@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                style="@android:style/Theme.Holo.Light"
+                android:orientation="vertical"
+                android:layout_width="fill_parent"
+                android:layout_height="fill_parent">
+
+    <LinearLayout
+            android:orientation="vertical"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_above="@+id/selectedRoutes" android:layout_alignParentTop="true">
+        <SearchView
+                style="@android:style/Theme.Holo.Light"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:iconifiedByDefault="true"
+                android:queryHint="@string/search_hint"
+                android:id="@+id/searchView" android:layout_gravity="center|top" android:baselineAligned="false"/>
+        <ListView
+                style="@android:style/Theme.Holo.Light"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:id="@+id/searchResultView" android:layout_gravity="center_vertical|top"/>
+    </LinearLayout>
+    <View android:id="@+id/separator"
+          android:background="@android:color/darker_gray"
+          android:layout_width="fill_parent"
+          android:layout_height="1dip"
+          android:layout_above="@+id/selectedRoutes"/>
+    <LinearLayout
+            android:id="@+id/selectedRoutes"
+            android:orientation="vertical"
+            android:layout_width="match_parent"
+            android:layout_alignParentBottom="true"
+            android:layout_height="wrap_content" android:padding="10dp">
+        <RelativeLayout
+                android:orientation="horizontal"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content">
+            <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:text="@string/selected_routes" android:id="@+id/textView"/>
+            <ImageButton android:id="@+id/clearFilter"
+                         android:layout_height="wrap_content"
+                         android:layout_width="wrap_content"
+                         android:background="@android:drawable/ic_menu_delete"
+                         android:layout_gravity="right" android:layout_alignBottom="@+id/textView"
+                         android:layout_alignParentRight="true" android:layout_marginTop="-5dp"
+                         android:visibility="invisible"/>
+        </RelativeLayout>
+        <LinearLayout android:id="@+id/selectedRoutesList"
+                      android:orientation="horizontal"
+                      android:layout_width="fill_parent"
+                      android:layout_height="wrap_content"/>
+    </LinearLayout>
+</RelativeLayout>
