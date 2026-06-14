@@ -2,7 +2,26 @@
   "permissions": {
     "allow": [
       "Bash(find D:/alicode/ali/repo-22/qwen2 -type d -name test*)",
-      "Bash(find D:/alicode/ali/repo-22/qwen2 -type f -name *Test* -o -name *test* -o -name *Spec*)"
+      "Bash(find D:/alicode/ali/repo-22/qwen2 -type f -name *Test* -o -name *test* -o -name *Spec*)",
+      "Bash(java -version)",
+      "Bash(mvn --version)",
+      "Bash(apt-get install:*)",
+      "Read(//d/tmp/**)",
+      "Bash(curl -sL https://dlcdn.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz -o maven.tar.gz)",
+      "Bash(tar xzf:*)",
+      "Bash(export PATH=/tmp/apache-maven-3.9.9/bin:$PATH)",
+      "Bash(curl -sL \"https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz\" -o maven.tar.gz)",
+      "Bash(/tmp/apache-maven-3.9.6/bin/mvn --version)",
+      "Bash(/tmp/apache-maven-3.9.6/bin/mvn compile:*)",
+      "Read(//tmp/**)",
+      "Bash(javac -source 1.6 -target 1.6 -d /tmp/verify-build/classes *.java)",
+      "Bash(mkdir -p /tmp/verify-build/classes)",
+      "Bash(javac -source 8 -target 8 -d /tmp/verify-build/classes *.java)",
+      "Bash(javac -source 8 -target 8 -cp /tmp/verify-build/classes -d /tmp/verify-build/classes src/main/java/com/emal/android/transport/spb/VehicleType.java src/main/java/com/emal/android/transport/spb/portal/Route.java src/main/java/com/emal/android/transport/spb/portal/Vehicle.java src/main/java/com/emal/android/transport/spb/portal/VehicleCollection.java src/main/java/com/emal/android/transport/spb/portal/VehicleProps.java src/main/java/com/emal/android/transport/spb/portal/Geometry.java src/main/java/com/emal/android/transport/spb/portal/PortalClient.java src/main/java/com/emal/android/transport/spb/portal/PortalClientException.java src/main/java/com/emal/android/transport/spb/utils/Constants.java src/main/java/com/emal/android/transport/spb/utils/DrawHelper.java src/main/java/com/emal/android/transport/spb/utils/GeoConverter.java src/main/java/com/emal/android/transport/spb/utils/ErrorSignCallback.java src/main/java/com/emal/android/transport/spb/utils/MenuErrorSignCallback.java src/main/java/com/emal/android/transport/spb/utils/UIHelper.java src/main/java/com/emal/android/transport/spb/VehicleSyncAdapter.java src/main/java/com/emal/android/transport/spb/GMapVehicleSyncAdapter.java src/main/java/com/emal/android/transport/spb/task/DrawVehicleTask.java src/main/java/com/emal/android/transport/spb/task/SyncVehiclePositionTask.java src/main/java/com/emal/android/transport/spb/VehicleTracker.java)",
+      "Bash(javac -source 8 -target 8 -encoding UTF-8 -cp /tmp/verify-build/classes -d /tmp/verify-build/classes src/main/java/com/emal/android/transport/spb/VehicleType.java src/main/java/com/emal/android/transport/spb/portal/Route.java src/main/java/com/emal/android/transport/spb/portal/Vehicle.java src/main/java/com/emal/android/transport/spb/portal/VehicleCollection.java src/main/java/com/emal/android/transport/spb/portal/VehicleProps.java src/main/java/com/emal/android/transport/spb/portal/Geometry.java src/main/java/com/emal/android/transport/spb/portal/PortalClient.java src/main/java/com/emal/android/transport/spb/portal/PortalClientException.java src/main/java/com/emal/android/transport/spb/utils/Constants.java src/main/java/com/emal/android/transport/spb/utils/DrawHelper.java src/main/java/com/emal/android/transport/spb/utils/GeoConverter.java src/main/java/com/emal/android/transport/spb/utils/ErrorSignCallback.java src/main/java/com/emal/android/transport/spb/utils/MenuErrorSignCallback.java src/main/java/com/emal/android/transport/spb/utils/UIHelper.java src/main/java/com/emal/android/transport/spb/VehicleSyncAdapter.java src/main/java/com/emal/android/transport/spb/GMapVehicleSyncAdapter.java src/main/java/com/emal/android/transport/spb/task/DrawVehicleTask.java src/main/java/com/emal/android/transport/spb/task/SyncVehiclePositionTask.java src/main/java/com/emal/android/transport/spb/VehicleTracker.java)",
+      "Bash(javac -source 8 -target 8 -encoding UTF-8 -cp \"/tmp/verify-build/classes;/tmp/verify-build/junit-4.12.jar;/tmp/verify-build/mockito-core-1.10.19.jar;/tmp/verify-build/hamcrest-core-1.3.jar\" -d /tmp/verify-build/test-classes src/test/java/com/emal/android/transport/spb/VehicleTrackerTest.java)",
+      "Bash(mkdir:*)",
+      "Bash(javac -source 8 -target 8 -encoding UTF-8 -cp \"/tmp/verify-build/classes;/tmp/verify-build/junit-4.12.jar;/tmp/verify-build/mockito-core-1.10.19.jar;/tmp/verify-build/hamcrest-core-1.3.jar;/tmp/verify-build/objenesis-2.1.jar\" -d /tmp/verify-build/test-classes src/test/java/com/emal/android/transport/spb/VehicleTrackerTest.java)"
     ]
   }
 }

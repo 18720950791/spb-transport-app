@@ -12,6 +12,20 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ * Coordinates periodic vehicle position fetching and map rendering for tracked routes.
+ *
+ * <h3>Task lifecycle rules</h3>
+ * <ul>
+ *   <li>Each route maps to exactly one active {@link DrawVehicleTask} in {@code routeTaskMap}.</li>
+ *   <li>Adding a route that already has a task cancels the old task first, then creates a new one.</li>
+ *   <li>{@link #pause()} and {@link #stop()} bump an internal <em>generation</em> counter.
+ *       Any task that was created under a previous generation is considered <em>stale</em>
+ *       and will skip its map-update callback.</li>
+ *   <li>{@link #remove(Route)} cancels the task for a single route and removes its markers.</li>
+ *   <li>{@link #restart()} bumps the generation so that any in-flight tasks from before the
+ *       restart are invalidated, then starts a fresh timer cycle for the current route set.</li>
+ * </ul>
+ *
  * User: alexey.emelyanenko@gmail.com
  * Date: 5/18/13 5:06 AM
  */
@@ -21,13 +35,19 @@ public class VehicleTracker {
     private Set<VehicleType> vehicleTypes;
     private Map<Route, AsyncTask> routeTaskMap;
     private VehicleSyncAdapter vehicleSyncAdapter;
-    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private Handler mHandler;
     private TimerTask timerTask;
+
+    /**
+     * Monotonically increasing counter bumped on every state transition that should
+     * invalidate in-flight tasks (pause, stop, restart). A {@link DrawVehicleTask}
+     * captures the generation at creation time and checks it before updating the map.
+     */
+    private volatile long generation;
 
     private class MapUpdateTimerTask extends TimerTask {
         @Override
         public void run() {
-            //TODO
             synchronized (VehicleTracker.this) {
                 int syncTime = vehicleSyncAdapter.getSyncTime();
                 Log.d(TAG, "START Timer Update " + Thread.currentThread().getName() + " with time " + syncTime);
@@ -38,13 +58,32 @@ public class VehicleTracker {
     }
 
     public VehicleTracker(VehicleSyncAdapter vehicleSyncAdapter) {
+        this(vehicleSyncAdapter, new Handler(Looper.getMainLooper()));
+    }
+
+    /**
+     * Package-private constructor for testing: accepts an injectable {@link Handler}
+     * so that tests can supply a mock without requiring the Android Looper.
+     */
+    VehicleTracker(VehicleSyncAdapter vehicleSyncAdapter, Handler handler) {
         this.vehicleSyncAdapter = vehicleSyncAdapter;
+        this.mHandler = handler;
         this.vehicleTypes = Collections.synchronizedSet(new HashSet<VehicleType>());
         this.routeTaskMap = new ConcurrentHashMap<Route, AsyncTask>();
+        this.generation = 0L;
+    }
+
+    /**
+     * Returns the current generation counter. Tasks compare their captured generation
+     * against this value to detect staleness.
+     */
+    public long getGeneration() {
+        return generation;
     }
 
     public synchronized void restart() {
         Log.d(TAG, "restart");
+        generation++;
         vehicleSyncAdapter.setBBox();
         if (timerTask != null) {
             timerTask.cancel();
@@ -65,19 +104,50 @@ public class VehicleTracker {
         return vehicleTypes.add(vehicleType);
     }
 
+    /**
+     * Adds or replaces a tracked route.
+     * <p>
+     * If a task already exists for this route it is cancelled before a new one is created,
+     * ensuring that the old task's callback cannot overwrite the new task's results.
+     */
     public synchronized void add(Route route) {
-        AsyncTask asyncTask = routeTaskMap.get(route);
-        if (asyncTask == null) {
-            routeTaskMap.put(route, new DrawVehicleTask(route, vehicleSyncAdapter));
+        AsyncTask oldTask = routeTaskMap.get(route);
+        if (oldTask != null && !AsyncTask.Status.FINISHED.equals(oldTask.getStatus())) {
+            Log.d(TAG, "Cancelling previous task for route: " + route);
+            oldTask.cancel(true);
         }
+        DrawVehicleTask newTask = new DrawVehicleTask(route, vehicleSyncAdapter, this);
+        routeTaskMap.put(route, newTask);
+    }
+
+    /**
+     * Removes a single route from tracking.
+     * Cancels its in-flight task (if any) and removes its markers from the map.
+     *
+     * @param route the route to stop tracking
+     */
+    public synchronized void remove(Route route) {
+        AsyncTask task = routeTaskMap.remove(route);
+        if (task != null && !AsyncTask.Status.FINISHED.equals(task.getStatus())) {
+            Log.d(TAG, "Cancelling task for removed route: " + route);
+            task.cancel(true);
+        }
+        vehicleSyncAdapter.removeMarkers(route);
     }
 
     public ArrayList<Route> getTracked() {
         return new ArrayList<Route>(routeTaskMap.keySet());
     }
 
+    /**
+     * Pauses tracking: cancels the timer and all in-flight tasks, bumps the generation
+     * counter so that any already-scheduled callbacks are invalidated.
+     * Route entries are kept in {@code routeTaskMap} so that {@link #restart()} can
+     * resume the same set of routes.
+     */
     public synchronized void pause() {
         Log.d(TAG, "pause tracking <<");
+        generation++;
         mHandler.removeCallbacks(timerTask);
         if (timerTask != null) {
             timerTask.cancel();
@@ -99,6 +169,9 @@ public class VehicleTracker {
         Log.d(TAG, "pause tracking >>");
     }
 
+    /**
+     * Fully stops tracking: pauses, removes all markers, clears route and type state.
+     */
     public synchronized void stop() {
         Log.d(TAG, "stop tracking <<");
         pause();
@@ -107,6 +180,7 @@ public class VehicleTracker {
             vehicleSyncAdapter.removeMarkers(key);
         }
         routeTaskMap.clear();
+        vehicleTypes.clear();
         Log.d(TAG, "stop tracking >>");
     }
 
@@ -127,7 +201,7 @@ public class VehicleTracker {
             if (task != null && !AsyncTask.Status.FINISHED.equals(task.getStatus())) {
                 task.cancel(true);
             }
-            task = new DrawVehicleTask(route, vehicleSyncAdapter).execute();
+            task = new DrawVehicleTask(route, vehicleSyncAdapter, this).execute();
             routeTaskMap.put(route, task);
         }
         Log.d(TAG, "scheduleTasks >>");

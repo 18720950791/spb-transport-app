@@ -3,6 +3,7 @@ package com.emal.android.transport.spb.task;
 import android.os.AsyncTask;
 import android.util.Log;
 import com.emal.android.transport.spb.VehicleSyncAdapter;
+import com.emal.android.transport.spb.VehicleTracker;
 import com.emal.android.transport.spb.VehicleType;
 import com.emal.android.transport.spb.portal.*;
 import com.emal.android.transport.spb.utils.DrawHelper;
@@ -11,6 +12,18 @@ import com.google.android.gms.maps.model.*;
 import java.util.*;
 
 /**
+ * Fetches vehicle positions for a single route and draws markers on the map.
+ *
+ * <p>Each task captures the {@link VehicleTracker} generation at construction time.
+ * Before writing results back to the map in {@link #onPostExecute}, it verifies:
+ * <ol>
+ *   <li>The task has not been cancelled ({@link #isCancelled()}).</li>
+ *   <li>The tracker generation has not advanced (i.e. no pause/stop/restart happened
+ *       since this task was created).</li>
+ * </ol>
+ * If either check fails, the callback is skipped entirely — preventing stale or
+ * cancelled tasks from updating the map overlay.
+ *
  * @author alexey.emelyanenko@gmail.com
  * @since: 1.5
  */
@@ -18,14 +31,38 @@ public class DrawVehicleTask extends AsyncTask<Object, Void, List<Vehicle>> {
     private static final String TAG = DrawVehicleTask.class.getName();
     private Route route;
     private VehicleSyncAdapter vehicleSyncAdapter;
+    private final VehicleTracker tracker;
+    private final long taskGeneration;
 
-    public DrawVehicleTask(Route route, VehicleSyncAdapter vehicleSyncAdapter) {
+    public DrawVehicleTask(Route route, VehicleSyncAdapter vehicleSyncAdapter, VehicleTracker tracker) {
         this.route = route;
         this.vehicleSyncAdapter = vehicleSyncAdapter;
+        this.tracker = tracker;
+        this.taskGeneration = tracker.getGeneration();
+    }
+
+    /**
+     * Returns the generation captured at construction time.
+     * Visible for testing.
+     */
+    long getTaskGeneration() {
+        return taskGeneration;
+    }
+
+    /**
+     * Checks whether this task is stale — either cancelled or superseded by a
+     * tracker state change (pause, stop, restart, route replacement).
+     * Visible for testing.
+     */
+    boolean isStale() {
+        return isCancelled() || tracker.getGeneration() != taskGeneration;
     }
 
     @Override
     protected void onPreExecute() {
+        if (isStale()) {
+            return;
+        }
         vehicleSyncAdapter.beforeSync(false);
     }
 
@@ -45,6 +82,14 @@ public class DrawVehicleTask extends AsyncTask<Object, Void, List<Vehicle>> {
 
     @Override
     protected void onPostExecute(List<Vehicle> vehicles) {
+        if (isStale()) {
+            Log.d(TAG, "onPostExecute skipped (stale): cancelled=" + isCancelled()
+                    + ", gen=" + taskGeneration + ", trackerGen=" + tracker.getGeneration()
+                    + ", route=" + route);
+            vehicleSyncAdapter.afterSync(false);
+            return;
+        }
+
         if (vehicles == null) {
             vehicleSyncAdapter.afterSync(false);
             return;
