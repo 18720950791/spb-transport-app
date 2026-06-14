@@ -21,7 +21,7 @@ public class VehicleTracker {
     private Set<VehicleType> vehicleTypes;
     private Map<Route, AsyncTask> routeTaskMap;
     private VehicleSyncAdapter vehicleSyncAdapter;
-    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private Handler mHandler;
     private TimerTask timerTask;
 
     private class MapUpdateTimerTask extends TimerTask {
@@ -41,17 +41,25 @@ public class VehicleTracker {
         this.vehicleSyncAdapter = vehicleSyncAdapter;
         this.vehicleTypes = Collections.synchronizedSet(new HashSet<VehicleType>());
         this.routeTaskMap = new ConcurrentHashMap<Route, AsyncTask>();
+        this.mHandler = new Handler(Looper.getMainLooper());
+    }
+
+    /** Package-private constructor for unit testing with injected Handler. */
+    VehicleTracker(VehicleSyncAdapter vehicleSyncAdapter, Handler handler) {
+        this.vehicleSyncAdapter = vehicleSyncAdapter;
+        this.vehicleTypes = Collections.synchronizedSet(new HashSet<VehicleType>());
+        this.routeTaskMap = new ConcurrentHashMap<Route, AsyncTask>();
+        this.mHandler = handler;
     }
 
     public synchronized void restart() {
         Log.d(TAG, "restart");
         vehicleSyncAdapter.setBBox();
         if (timerTask != null) {
+            mHandler.removeCallbacks(timerTask);
             timerTask.cancel();
-        } else {
-            timerTask = new MapUpdateTimerTask();
         }
-        mHandler.removeCallbacks(timerTask);
+        timerTask = new MapUpdateTimerTask();
         mHandler.postDelayed(timerTask, 0);
     }
 
@@ -78,9 +86,10 @@ public class VehicleTracker {
 
     public synchronized void pause() {
         Log.d(TAG, "pause tracking <<");
-        mHandler.removeCallbacks(timerTask);
         if (timerTask != null) {
+            mHandler.removeCallbacks(timerTask);
             timerTask.cancel();
+            timerTask = null;
         }
 
         if (syncTypesTask != null && !AsyncTask.Status.FINISHED.equals(syncTypesTask.getStatus())) {
