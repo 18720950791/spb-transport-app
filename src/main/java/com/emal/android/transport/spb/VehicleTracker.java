@@ -21,7 +21,7 @@ public class VehicleTracker {
     private Set<VehicleType> vehicleTypes;
     private Map<Route, AsyncTask> routeTaskMap;
     private VehicleSyncAdapter vehicleSyncAdapter;
-    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private final TimerScheduler scheduler;
     private TimerTask timerTask;
 
     private class MapUpdateTimerTask extends TimerTask {
@@ -32,13 +32,42 @@ public class VehicleTracker {
                 int syncTime = vehicleSyncAdapter.getSyncTime();
                 Log.d(TAG, "START Timer Update " + Thread.currentThread().getName() + " with time " + syncTime);
                 scheduleTasks();
-                mHandler.postDelayed(this, syncTime);
+                scheduler.schedule(this, syncTime);
             }
         }
     }
 
+    /**
+     * Seam over the periodic-callback mechanism. Lets the timer lifecycle be unit tested on a
+     * plain JVM, where the Android Handler/Looper would otherwise throw "Stub!".
+     */
+    interface TimerScheduler {
+        void schedule(Runnable task, long delayMillis);
+
+        void unschedule(Runnable task);
+    }
+
+    private static final class HandlerScheduler implements TimerScheduler {
+        private final Handler handler = new Handler(Looper.getMainLooper());
+
+        @Override
+        public void schedule(Runnable task, long delayMillis) {
+            handler.postDelayed(task, delayMillis);
+        }
+
+        @Override
+        public void unschedule(Runnable task) {
+            handler.removeCallbacks(task);
+        }
+    }
+
     public VehicleTracker(VehicleSyncAdapter vehicleSyncAdapter) {
+        this(vehicleSyncAdapter, new HandlerScheduler());
+    }
+
+    VehicleTracker(VehicleSyncAdapter vehicleSyncAdapter, TimerScheduler scheduler) {
         this.vehicleSyncAdapter = vehicleSyncAdapter;
+        this.scheduler = scheduler;
         this.vehicleTypes = Collections.synchronizedSet(new HashSet<VehicleType>());
         this.routeTaskMap = new ConcurrentHashMap<Route, AsyncTask>();
     }
@@ -46,13 +75,14 @@ public class VehicleTracker {
     public synchronized void restart() {
         Log.d(TAG, "restart");
         vehicleSyncAdapter.setBBox();
+        // A TimerTask is single-use: once cancelled it can never run again. Always remove the old
+        // callback and start a fresh task so periodic refresh resumes after start/pause/restart.
         if (timerTask != null) {
+            scheduler.unschedule(timerTask);
             timerTask.cancel();
-        } else {
-            timerTask = new MapUpdateTimerTask();
         }
-        mHandler.removeCallbacks(timerTask);
-        mHandler.postDelayed(timerTask, 0);
+        timerTask = new MapUpdateTimerTask();
+        scheduler.schedule(timerTask, 0);
     }
 
     public synchronized void start() {
@@ -78,9 +108,10 @@ public class VehicleTracker {
 
     public synchronized void pause() {
         Log.d(TAG, "pause tracking <<");
-        mHandler.removeCallbacks(timerTask);
         if (timerTask != null) {
+            scheduler.unschedule(timerTask);
             timerTask.cancel();
+            timerTask = null;
         }
 
         if (syncTypesTask != null && !AsyncTask.Status.FINISHED.equals(syncTypesTask.getStatus())) {
